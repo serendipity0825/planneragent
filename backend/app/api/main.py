@@ -6,7 +6,8 @@ from contextlib import asynccontextmanager
 
 from ..core.config import get_settings
 from ..core.llm import setup_langsmith  # 显式导入以确保LangSmith设置
-from .routes import trip, chat, map, config
+from .routes import trip, chat, map, config, auth, user
+from ..core.database import init_db
 
 # 启动时设置 LangSmith
 setup_langsmith()
@@ -17,18 +18,26 @@ async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     settings = get_settings()
 
-    # 启动时
+    # 启动时：初始化数据库
+    try:
+        await init_db()
+    except Exception as e:
+        print(f"[START] 数据库初始化失败: {e}")
+
     print("\n" + "=" * 60)
     print(f"[START] {settings.app_name} v{settings.app_version}")
     print("=" * 60)
     print(f"LLM Provider: {settings.llm_provider}")
     print(f"DeepSeek API Key: {'已配置' if settings.deepseek_api_key else '未配置'}")
     print(f"阿里云 API Key: {'已配置' if settings.aliyun_dashscope_api_key else '未配置'}")
+    print(f"OpenAI API Key: {'已配置' if settings.openai_api_key else '未配置'}")
+    print(f"智谱 GLM API Key: {'已配置' if settings.glm_api_key else '未配置'}")
     print(f"高德地图 API Key: {'已配置' if settings.amap_api_key else '未配置'}")
     print(f"LangSmith 追踪: {'已启用' if settings.langchain_tracing_v2 else '未启用'}")
     if settings.langchain_tracing_v2:
         print(f"LangSmith 项目: {settings.langchain_project}")
     print(f"CORS Origins: {settings.get_cors_origins_list()}")
+    print(f"数据库: {settings.database_url}")
     print("=" * 60 + "\n")
 
     yield
@@ -81,6 +90,8 @@ POI搜索 -> 天气查询 -> 酒店推荐 -> 行程规划 -> 用户审核
     app.include_router(chat.router, prefix="/api")
     app.include_router(map.router, prefix="/api")
     app.include_router(config.router, prefix="/api")
+    app.include_router(auth.router, prefix="/api")
+    app.include_router(user.router, prefix="/api")
 
     # 根路由
     @app.get("/")

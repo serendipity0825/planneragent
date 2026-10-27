@@ -1,4 +1,4 @@
-import axios from 'axios'
+import { apiClient, getToken, setToken, clearToken, API_BASE_URL } from '@/utils/request'
 import type {
   TripRequest,
   TripPlanResponse,
@@ -6,45 +6,18 @@ import type {
   ChatMessage,
   ChatResponse,
   UserFeedback,
-  TripPlan
+  TripPlan,
+  User,
+  LoginRequest,
+  RegisterRequest,
+  TokenResponse,
+  TripHistoryItem,
+  TripHistoryDetail
 } from '@/types'
 
-// 开发环境使用代理，生产环境使用完整 URL
-const API_BASE_URL = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000')
-
-console.log('API_BASE_URL:', API_BASE_URL || '使用代理')
-
-const apiClient = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 300000, // 5分钟
-  headers: {
-    'Content-Type': 'application/json'
-  }
-})
-
-// 请求拦截器 - 添加调试日志
-apiClient.interceptors.request.use(
-  (config) => {
-    console.log('API Request:', config.method?.toUpperCase(), config.baseURL + config.url, config.data)
-    return config
-  },
-  (error) => {
-    console.error('API Request Error:', error)
-    return Promise.reject(error)
-  }
-)
-
-// 响应拦截器 - 添加调试日志
-apiClient.interceptors.response.use(
-  (response) => {
-    console.log('API Response:', response.status, response.data)
-    return response
-  },
-  (error) => {
-    console.error('API Response Error:', error.response?.status, error.response?.data || error.message)
-    return Promise.reject(error)
-  }
-)
+// Token 管理、axios 实例、API 地址统一在 @/utils/request 中维护
+// 此处重新导出，便于既有调用方 `from '@/services/api'` 继续使用
+export { getToken, setToken, clearToken, API_BASE_URL }
 
 // ===========================================
 // 旅行规划 API
@@ -67,10 +40,14 @@ export async function createTripPlanStream(
   onError: (error: Error) => void,
   onComplete: () => void
 ): Promise<void> {
-  const baseUrl = import.meta.env.DEV ? '' : API_BASE_URL
+  const baseUrl = API_BASE_URL
+  const token = getToken()
   const response = await fetch(`${baseUrl}/api/trip/plan/stream`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {})
+    },
     body: JSON.stringify(request)
   })
 
@@ -112,7 +89,14 @@ export async function createTripPlanStream(
 /**
  * 提交用户反馈
  */
-export async function submitFeedback(feedback: UserFeedback): Promise<{ success: boolean; message: string }> {
+export async function submitFeedback(feedback: UserFeedback): Promise<{
+  success: boolean
+  message: string
+  status?: string
+  action?: string
+  data?: TripPlan
+  retry_count?: number
+}> {
   const response = await apiClient.post('/api/trip/feedback', feedback)
   return response.data
 }
@@ -131,7 +115,14 @@ export async function approveTripPlan(sessionId: string, comment?: string): Prom
 /**
  * 拒绝行程计划
  */
-export async function rejectTripPlan(sessionId: string, comment?: string): Promise<{ success: boolean; message: string }> {
+export async function rejectTripPlan(sessionId: string, comment?: string): Promise<{
+  success: boolean
+  message: string
+  status?: string
+  action?: string
+  data?: TripPlan
+  retry_count?: number
+}> {
   return submitFeedback({
     session_id: sessionId,
     action: 'reject',
@@ -216,7 +207,7 @@ export async function getWeather(city: string): Promise<{ success: boolean; data
  * 获取静态地图图片
  */
 export function getStaticMapUrl(city: string, markers?: string): string {
-  const baseUrl = import.meta.env.DEV ? '' : API_BASE_URL
+  const baseUrl = API_BASE_URL
   let url = `${baseUrl}/api/map/staticmap?city=${encodeURIComponent(city)}`
   if (markers) {
     url += `&markers=${encodeURIComponent(markers)}`
@@ -244,6 +235,62 @@ export async function getLLMProviders(): Promise<{
  */
 export async function healthCheck(): Promise<{ status: string }> {
   const response = await apiClient.get('/health')
+  return response.data
+}
+
+// ===========================================
+// 认证 API
+// ===========================================
+
+/**
+ * 注册
+ */
+export async function register(data: RegisterRequest): Promise<TokenResponse> {
+  const response = await apiClient.post<TokenResponse>('/api/auth/register', data)
+  return response.data
+}
+
+/**
+ * 登录
+ */
+export async function login(data: LoginRequest): Promise<TokenResponse> {
+  const response = await apiClient.post<TokenResponse>('/api/auth/login', data)
+  return response.data
+}
+
+/**
+ * 获取当前用户
+ */
+export async function getMe(): Promise<User> {
+  const response = await apiClient.get<User>('/api/auth/me')
+  return response.data
+}
+
+// ===========================================
+// 历史行程 API
+// ===========================================
+
+/**
+ * 获取历史行程列表
+ */
+export async function getTripHistory(): Promise<TripHistoryItem[]> {
+  const response = await apiClient.get<TripHistoryItem[]>('/api/user/trips')
+  return response.data
+}
+
+/**
+ * 获取历史行程详情
+ */
+export async function getTripHistoryDetail(id: number): Promise<TripHistoryDetail> {
+  const response = await apiClient.get<TripHistoryDetail>(`/api/user/trips/${id}`)
+  return response.data
+}
+
+/**
+ * 删除历史行程
+ */
+export async function deleteTripHistory(id: number): Promise<{ success: boolean }> {
+  const response = await apiClient.delete(`/api/user/trips/${id}`)
   return response.data
 }
 

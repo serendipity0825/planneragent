@@ -105,6 +105,7 @@
         <!-- LLM 选择 -->
         <div class="llm-selector">
           <el-radio-group v-model="llmProvider" size="small">
+            <el-radio-button label="glm">智谱 GLM</el-radio-button>
             <el-radio-button label="deepseek">DeepSeek</el-radio-button>
             <el-radio-button label="aliyun">阿里云百炼</el-radio-button>
           </el-radio-group>
@@ -175,7 +176,7 @@ const chatStore = useChatStore()
 const tripStore = useTripStore()
 
 const inputMessage = ref('')
-const llmProvider = ref<'deepseek' | 'aliyun'>('deepseek')
+const llmProvider = ref<'glm' | 'deepseek' | 'aliyun'>('glm')
 const messageListRef = ref<HTMLElement>()
 const showTripDrawer = ref(false)
 

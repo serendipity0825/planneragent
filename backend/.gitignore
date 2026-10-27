@@ -48,6 +48,9 @@ logs/
 # Saved results (user trip data)
 saved_results/
 
+# Runtime database / vector store data (首次启动自动创建)
+data/
+
 # Testing
 .pytest_cache/
 .coverage

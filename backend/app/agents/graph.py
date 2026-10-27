@@ -1,14 +1,14 @@
 """LangGraph 主图定义 - 多 Agent 协作流程"""
 
-from typing import TypedDict, Annotated, Sequence, Literal
+from typing import TypedDict, Literal
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import BaseMessage
 
-from ..models.schemas import AgentState, NodeType, TripStatus
+from ..models.schemas import TripStatus
 from .nodes.poi_agent import poi_search_node
 from .nodes.weather_agent import weather_node
 from .nodes.hotel_agent import hotel_node
+from .nodes.food_agent import food_node
 from .nodes.planner_agent import planner_node
 from .nodes.human_review import human_review_node
 
@@ -25,9 +25,11 @@ class GraphState(TypedDict):
     accommodation: str
     preferences: list
     free_text_input: str
+    budget: list  # 新增预算字段
     pois: list
     weather: list
     hotels: list
+    foods: list  # 新增美食列表
     itinerary: dict
     current_node: str
     status: str
@@ -35,63 +37,53 @@ class GraphState(TypedDict):
     errors: list
     need_human_review: bool
     human_feedback: str
+    human_review_action: str
+    user_rejection_feedback: str  # 用户拒绝时的反馈内容
+    retry_count: int  # 重新规划次数
     llm_provider: str
 
 
-def router_node(state: GraphState) -> Literal["poi_search", "weather", "hotel"]:
+# 注：原 route_node 动态路由已移除，改用线性边（见 create_trip_planner_graph）。
+# 旧实现按"数据列表是否为空"决定下一节点，某采集节点返回空列表时会反复回到
+# 同一节点，直到撞 LangGraph 默认 recursion_limit(25) 报错。线性边让每个节点
+# 只执行一次，空数据时顺序前进至 planner，不再死循环。
+
+
+def human_review_route(state: GraphState) -> Literal["end", "planner"]:
     """
-    路由节点 - 决定执行顺序
-
-    根据当前状态决定下一步执行哪个节点
-    """
-    # 检查哪些数据已经获取
-    has_pois = bool(state.get("pois"))
-    has_weather = bool(state.get("weather"))
-    has_hotels = bool(state.get("hotels"))
-
-    # 按顺序执行: POI -> Weather -> Hotel -> Planner
-    if not has_pois:
-        return "poi_search"
-    elif not has_weather:
-        return "weather"
-    elif not has_hotels:
-        return "hotel"
-    else:
-        return "planner"
-
-
-def should_continue(state: GraphState) -> Literal["continue", "human_review", "end"]:
-    """
-    判断是否继续执行
+    人工审核路由 - 决定是结束还是重新规划
 
     Returns:
-        continue: 继续执行下一个节点
-        human_review: 进入人工审核
-        end: 结束
+        end: 用户满意，结束流程
+        planner: 用户不满意，重新规划
     """
-    status = state.get("status", "")
+    feedback = state.get("human_feedback", "")
+    action = state.get("human_review_action", "")
+    user_rejection_feedback = state.get("user_rejection_feedback", "")
 
-    if status == TripStatus.FAILED.value:
+    # 如果有用户拒绝反馈（通过 /feedback 端点设置的），则需要重新规划
+    if user_rejection_feedback:
+        print("[Human Review] 检测到用户拒绝反馈 → 重新规划")
+        return "planner"
+
+    # 默认自动通过（无用户反馈时）
+    if action == "reject" or feedback == "reject":
+        print("[Human Review] 用户不满意 → 重新规划")
+        return "planner"
+    else:
+        print("[Human Review] 用户满意 → 结束")
         return "end"
-
-    if state.get("need_human_review"):
-        return "human_review"
-
-    if state.get("itinerary"):
-        return "human_review"
-
-    return "continue"
 
 
 def create_trip_planner_graph():
     """
     创建旅行规划图
 
-    图结构:
-    START -> poi_search -> weather -> hotel -> planner -> human_review -> END
-              |              |          |            |
-              v              v          v            v
-           (router)      (router)   (router)    (should_continue)
+    图结构（线性）:
+    START → poi_search → weather → hotel → food → planner → human_review → END
+                                                              → planner (循环重做)
+    说明：采用线性边而非按数据缺失动态路由，避免某采集节点返回空列表时
+    route 反复回到同一节点导致 Recursion limit 报错。
     """
     # 创建图
     workflow = StateGraph(GraphState)
@@ -100,29 +92,31 @@ def create_trip_planner_graph():
     workflow.add_node("poi_search", poi_search_node)
     workflow.add_node("weather", weather_node)
     workflow.add_node("hotel", hotel_node)
+    workflow.add_node("food", food_node)
     workflow.add_node("planner", planner_node)
     workflow.add_node("human_review", human_review_node)
 
-    # 设置入口
+    # 入口
     workflow.set_entry_point("poi_search")
 
-    # 添加边 - 线性流程
+    # 线性数据采集链（每个节点只执行一次，避免空数据循环）
     workflow.add_edge("poi_search", "weather")
     workflow.add_edge("weather", "hotel")
-    workflow.add_edge("hotel", "planner")
+    workflow.add_edge("hotel", "food")
+    workflow.add_edge("food", "planner")
 
-    # 条件边 - planner 后判断是否需要人工审核
+    # planner → human_review
+    workflow.add_edge("planner", "human_review")
+
+    # human_review 条件路由（满意或重做）
     workflow.add_conditional_edges(
-        "planner",
-        should_continue,
+        "human_review",
+        human_review_route,
         {
-            "human_review": "human_review",
-            "end": END
+            "end": END,
+            "planner": "planner"
         }
     )
-
-    # human_review 后结束
-    workflow.add_edge("human_review", END)
 
     # 编译图，添加 checkpointer 用于持久化
     memory = MemorySaver()

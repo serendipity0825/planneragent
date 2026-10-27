@@ -129,6 +129,25 @@ class LLMFactory:
                 **kwargs
             )
 
+        elif provider == "glm":
+            api_key = settings.glm_api_key
+            if not api_key:
+                raise ValueError("智谱 GLM API Key 未配置，请检查 .env 文件中的 GLM_API_KEY")
+
+            print(f"[LLM] 智谱 GLM 配置:")
+            print(f"[LLM]   Base URL: {settings.glm_base_url}")
+            print(f"[LLM]   Model: {settings.glm_model}")
+            print(f"[LLM]   API Key: {api_key[:8]}...{api_key[-4:]}")
+
+            return ChatOpenAI(
+                model=settings.glm_model,
+                api_key=api_key,
+                base_url=settings.glm_base_url,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs
+            )
+
         else:
             raise ValueError(f"不支持的 LLM 提供商: {provider}")
 
@@ -144,6 +163,8 @@ class LLMFactory:
             providers.append({"name": "aliyun", "model": settings.aliyun_model})
         if settings.openai_api_key:
             providers.append({"name": "openai", "model": settings.openai_model})
+        if settings.glm_api_key:
+            providers.append({"name": "glm", "model": settings.glm_model})
 
         return providers
 

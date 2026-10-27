@@ -2,8 +2,7 @@
   <div class="home-container">
     <!-- 头部 -->
     <div class="header">
-      <h1>🌍 LangGraph 智能旅行助手</h1>
-      <p>基于多 Agent 协作的智能行程规划系统</p>
+      <h1> 智能旅行助手</h1>
     </div>
 
     <!-- 主内容区 -->
@@ -132,6 +131,7 @@
           <!-- LLM 选择 -->
           <el-form-item label="AI 模型">
             <el-radio-group v-model="formData.llm_provider">
+              <el-radio label="glm">智谱 GLM</el-radio>
               <el-radio label="deepseek">DeepSeek</el-radio>
               <el-radio label="aliyun">阿里云百炼</el-radio>
             </el-radio-group>
@@ -230,6 +230,7 @@ import { ElMessage } from 'element-plus'
 import { Location, Promotion, Loading, WarningFilled, ChatDotRound, Close } from '@element-plus/icons-vue'
 import dayjs from 'dayjs'
 import { useTripStore } from '@/stores/trip'
+import { getToken, API_BASE_URL } from '@/services/api'
 import type { TripRequest, AgentStep } from '@/types'
 
 const router = useRouter()
@@ -244,7 +245,7 @@ const formData = ref<TripRequest>({
   accommodation: '经济型酒店',
   preferences: [],
   free_text_input: '',
-  llm_provider: 'deepseek',
+  llm_provider: 'glm',
   budget: [1000, 3000] as [number, number]
 })
 
@@ -306,6 +307,7 @@ function getNodeName(node: string): string {
     'poi_search': '🔍 景点搜索',
     'weather': '🌤️ 天气查询',
     'hotel': '🏨 酒店推荐',
+    'food':'美食推荐',
     'planner': '📋 行程规划',
     'human_review': '👤 等待审核',
     'complete': '✅ 完成',
@@ -337,10 +339,14 @@ async function handleSubmit() {
 
   try {
     // 使用流式API获取实时反馈
-    const baseUrl = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000')
+    const baseUrl = API_BASE_URL
+    const token = getToken()
     const response = await fetch(`${baseUrl}/api/trip/plan/stream`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      },
       body: JSON.stringify({ ...formData.value, session_id: sessionId }),
       signal: abortController.value.signal
     })
@@ -449,6 +455,23 @@ function handleStreamEvent(data: any) {
       tripStore.setNeedHumanReview(false)
 
       ElMessage.success('行程规划完成！')
+
+      setTimeout(() => {
+        router.push('/result')
+      }, 500)
+    }
+  }
+
+  // 处理人工审核等待
+  if (data.node === 'human_review' && data.status === 'waiting') {
+    progress.value = 100
+
+    if (data.data?.itinerary) {
+      tripStore.setTripPlan(data.data.itinerary as any)
+      tripStore.setStatus('need_confirm')
+      tripStore.setNeedHumanReview(true)
+
+      ElMessage.info('行程已生成，请审核确认')
 
       setTimeout(() => {
         router.push('/result')

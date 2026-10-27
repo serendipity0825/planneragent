@@ -44,6 +44,31 @@
         </el-descriptions>
       </el-card>
 
+      <!-- 天气预报卡片 -->
+      <el-card v-if="tripPlan.weather_info && tripPlan.weather_info.length > 0" class="weather-card" shadow="hover">
+        <template #header>
+          <div class="card-header">
+            <el-icon><Cloudy /></el-icon>
+            <span>天气预报</span>
+          </div>
+        </template>
+        <el-row :gutter="16">
+          <el-col v-for="(weather, index) in tripPlan.weather_info" :key="index" :span="6">
+            <div class="weather-item">
+              <div class="weather-date">{{ weather.date }}</div>
+              <div class="weather-icon">{{ getWeatherIcon(weather.day_weather) }}</div>
+              <div class="weather-temp">
+                <span class="temp-day">{{ weather.day_temp }}°</span>
+                <span class="temp-divider">/</span>
+                <span class="temp-night">{{ weather.night_temp }}°</span>
+              </div>
+              <div class="weather-desc">{{ weather.day_weather }}</div>
+              <div class="weather-wind">{{ weather.wind_direction }} {{ weather.wind_power }}级</div>
+            </div>
+          </el-col>
+        </el-row>
+      </el-card>
+
       <!-- 地图展示 -->
       <el-card class="map-card" shadow="hover">
         <template #header>
@@ -76,6 +101,26 @@
                 <span class="day-theme">{{ day.description }}</span>
               </div>
             </template>
+
+            <!-- 天气建议 -->
+            <div v-if="day.weather_advice" class="weather-advice-section">
+              <el-alert
+                :title="day.need_umbrella ? '🌤️ 今日天气提醒 - 建议带伞' : '🌤️ 今日天气提醒'"
+                :description="day.weather_advice"
+                :type="day.need_umbrella ? 'warning' : 'info'"
+                :closable="false"
+                show-icon
+              >
+                <template #default>
+                  <div class="weather-detail">
+                    {{ day.weather_advice }}
+                    <span v-if="day.need_umbrella" class="umbrella-tip">
+                      <el-icon><Umbrella /></el-icon> 请携带雨伞
+                    </span>
+                  </div>
+                </template>
+              </el-alert>
+            </div>
 
             <!-- 景点列表 -->
             <el-timeline>
@@ -189,27 +234,106 @@
     </div>
 
     <!-- 人工审核对话框 -->
-    <el-dialog v-model="showReviewDialog" title="行程确认" width="600px">
+    <el-dialog v-model="showReviewDialog" title="行程确认" width="800px" top="5vh">
       <div class="review-content">
+        <!-- 重新规划进度 -->
+        <div v-if="regenerating" class="regen-loading">
+          <div class="regen-title">正在为您重新规划...</div>
+          <el-progress :indeterminate="true" :show-text="false" :stroke-width="10" :percentage="100" />
+          <div class="regen-tip">AI 正在根据您的修改意见重新编排行程，请稍候</div>
+        </div>
+
+        <template v-else>
         <el-alert
           title="请确认您的行程安排"
           type="warning"
-          description="AI已为您生成行程规划，请仔细核对后确认。"
+          description="AI已为您生成行程规划，请滚动查看完整内容后确认。"
           :closable="false"
           show-icon
+          style="margin-bottom: 16px"
         />
-        <div class="review-actions">
+
+        <!-- 行程预览 - 可滚动 -->
+        <div class="review-itinerary" v-if="tripPlan">
+          <el-collapse v-model="activeDays">
+            <el-collapse-item
+              v-for="(day, index) in tripPlan.days"
+              :key="index"
+              :name="index"
+            >
+              <template #title>
+                <div class="day-title">
+                  <el-tag type="primary">第{{ day.day_index + 1 }}天</el-tag>
+                  <span class="day-date">{{ day.date }}</span>
+                </div>
+              </template>
+
+              <!-- 景点 -->
+              <div class="review-section">
+                <strong>📍 景点：</strong>
+                <span v-for="(attr, idx) in day.attractions" :key="idx">
+                  {{ attr.name }}{{ idx < day.attractions.length - 1 ? '、' : '' }}
+                </span>
+              </div>
+
+              <!-- 餐饮 -->
+              <div class="review-section" v-if="day.meals && day.meals.length > 0">
+                <strong>🍜 餐饮：</strong>
+                <div style="margin-left: 20px; margin-top: 4px;">
+                  <span v-for="(meal, idx) in day.meals" :key="idx" class="meal-item">
+                    <el-tag size="small" :type="meal.type === 'breakfast' ? 'success' : meal.type === 'lunch' ? 'warning' : 'danger'">
+                      {{ meal.type === 'breakfast' ? '早餐' : meal.type === 'lunch' ? '午餐' : '晚餐' }}
+                    </el-tag>
+                    {{ meal.name }}
+                  </span>
+                </div>
+              </div>
+
+              <!-- 酒店/住宿 -->
+              <div class="review-section review-hotel" v-if="day.hotel">
+                <strong>🏨 住宿：</strong>
+                <div style="margin-left: 20px; margin-top: 4px;">
+                  <div class="hotel-name-review">{{ day.hotel.name }}</div>
+                  <div class="hotel-address-review" v-if="day.hotel.address">
+                    <el-icon><Location /></el-icon>
+                    {{ day.hotel.address }}
+                  </div>
+                  <div class="hotel-info-review">
+                    <span v-if="day.hotel.price_range">💰 {{ day.hotel.price_range }}</span>
+                    <span v-if="day.hotel.rating" style="margin-left: 12px">
+                      ⭐ {{ day.hotel.rating }}
+                    </span>
+                  </div>
+                </div>
+              </div>
+              <div class="review-section" v-else>
+                <strong>🏨 住宿：</strong>
+                <span class="no-hotel">暂无酒店信息</span>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </div>
+
+        <div class="review-actions" style="margin-top: 16px">
           <el-input
             v-model="reviewComment"
             type="textarea"
-            :rows="3"
-            placeholder="如有修改意见，请在此输入..."
+            :rows="2"
+            placeholder="如有修改意见，请在此输入（可选）..."
+            :disabled="regenerating"
           />
         </div>
+        </template>
       </div>
       <template #footer>
-        <el-button @click="handleReject">重新规划</el-button>
-        <el-button type="primary" @click="handleApprove">确认行程</el-button>
+        <el-button @click="handleReject" type="danger" :disabled="regenerating">
+          <el-icon><Refresh /></el-icon>
+          重新规划
+        </el-button>
+        <el-button type="primary" @click="handleApprove" :disabled="regenerating">
+          <el-icon><Check /></el-icon>
+          确认行程
+        </el-button>
       </template>
     </el-dialog>
   </div>
@@ -221,7 +345,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import {
   ArrowLeft, Download, Refresh, Location, MapLocation, Calendar,
-  Clock, Ticket, Star, Food, House, Wallet, Warning
+  Clock, Ticket, Star, Food, House, Wallet, Warning, Cloudy, Check, Umbrella
 } from '@element-plus/icons-vue'
 import { useTripStore } from '@/stores/trip'
 import { approveTripPlan, rejectTripPlan, getStaticMapUrl } from '@/services/api'
@@ -233,8 +357,21 @@ const tripPlan = ref(tripStore.tripPlan)
 const activeDays = ref<number[]>([0])
 const showReviewDialog = ref(false)
 const reviewComment = ref('')
+const regenerating = ref(false)
 const mapInstance = ref<any>(null)
 const mapLoaded = ref(false)
+
+// 根据天气描述获取对应图标
+function getWeatherIcon(weather: string): string {
+  if (!weather) return '🌤️'
+  if (weather.includes('雨')) return '🌧️'
+  if (weather.includes('雪')) return '❄️'
+  if (weather.includes('云') || weather.includes('阴')) return '☁️'
+  if (weather.includes('晴')) return '☀️'
+  if (weather.includes('雾') || weather.includes('霾')) return '🌫️'
+  if (weather.includes('风')) return '💨'
+  return '🌤️'
+}
 
 // 初始化地图
 async function initMap() {
@@ -439,25 +576,47 @@ async function handleApprove() {
   if (!tripStore.sessionId) return
 
   try {
-    await approveTripPlan(tripStore.sessionId, reviewComment.value)
+    const result = await approveTripPlan(tripStore.sessionId, reviewComment.value)
     ElMessage.success('行程已确认')
     showReviewDialog.value = false
+    tripStore.setNeedHumanReview(false)
   } catch (error) {
     ElMessage.error('确认失败')
   }
 }
 
-// 拒绝行程
+// 拒绝行程（带意见重新规划）
 async function handleReject() {
-  if (!tripStore.sessionId) return
+  if (!tripStore.sessionId || regenerating.value) return
+
+  regenerating.value = true
 
   try {
-    await rejectTripPlan(tripStore.sessionId, reviewComment.value)
-    ElMessage.info('正在重新规划...')
-    showReviewDialog.value = false
-    router.push('/')
+    const result = await rejectTripPlan(tripStore.sessionId, reviewComment.value)
+
+    if (result.success && result.data) {
+      // 收到重新生成的行程 → 保持审核弹窗打开，让用户再次审核（不直接确认）
+      tripPlan.value = result.data
+      tripStore.setTripPlan(result.data)
+      tripStore.setNeedHumanReview(true)
+      reviewComment.value = ''
+      activeDays.value = [0]
+      ElMessage.success('已重新生成行程，请再次审核')
+    } else if (result.status === 'max_retries_exceeded') {
+      // 达到最大重试次数
+      ElMessage.warning(result.message || '已达到最大重试次数，建议返回首页重新规划')
+      showReviewDialog.value = false
+      tripStore.reset()
+      router.push('/')
+    } else {
+      // 其他失败情况，返回首页重新规划
+      showReviewDialog.value = false
+      router.push('/')
+    }
   } catch (error) {
     ElMessage.error('操作失败')
+  } finally {
+    regenerating.value = false
   }
 }
 
@@ -540,6 +699,60 @@ onMounted(() => {
   background-color: #f5f5f5;
 }
 
+.weather-card {
+  margin-bottom: 20px;
+}
+
+.weather-item {
+  text-align: center;
+  padding: 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px;
+  color: white;
+}
+
+.weather-date {
+  font-size: 14px;
+  opacity: 0.9;
+  margin-bottom: 8px;
+}
+
+.weather-icon {
+  font-size: 36px;
+  margin: 8px 0;
+}
+
+.weather-temp {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 8px 0;
+}
+
+.temp-day {
+  font-size: 24px;
+}
+
+.temp-divider {
+  margin: 0 4px;
+  opacity: 0.7;
+}
+
+.temp-night {
+  font-size: 16px;
+  opacity: 0.8;
+}
+
+.weather-desc {
+  font-size: 14px;
+  margin-top: 4px;
+}
+
+.weather-wind {
+  font-size: 12px;
+  opacity: 0.8;
+  margin-top: 4px;
+}
+
 .day-title {
   display: flex;
   align-items: center;
@@ -552,6 +765,24 @@ onMounted(() => {
 }
 
 .day-theme {
+  font-weight: 500;
+}
+
+.weather-advice-section {
+  margin-bottom: 16px;
+}
+
+.weather-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.umbrella-tip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #e6a23c;
   font-weight: 500;
 }
 
@@ -688,10 +919,97 @@ onMounted(() => {
 }
 
 .review-content {
-  padding: 20px 0;
+  padding: 0;
+}
+
+.review-itinerary {
+  max-height: 400px;
+  overflow-y: auto;
+  border: 1px solid #e4e7ed;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafafa;
+}
+
+.review-section {
+  padding: 8px 0;
+  font-size: 14px;
+  color: #606266;
+  line-height: 1.8;
+}
+
+.review-section strong {
+  color: #303133;
+  margin-right: 8px;
+}
+
+.review-hotel {
+  background: #f0f9ff;
+  padding: 12px;
+  border-radius: 8px;
+  margin: 8px 0;
+}
+
+.hotel-name-review {
+  font-weight: 600;
+  color: #303133;
+  font-size: 15px;
+}
+
+.hotel-address-review {
+  color: #909399;
+  font-size: 13px;
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.hotel-info-review {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #606266;
+}
+
+.meal-item {
+  display: inline-block;
+  margin-right: 12px;
+  margin-bottom: 4px;
+}
+
+.no-hotel {
+  color: #909399;
+  font-style: italic;
 }
 
 .review-actions {
-  margin-top: 20px;
+  margin-top: 16px;
+}
+
+.regen-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  text-align: center;
+}
+
+.regen-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 20px;
+}
+
+.regen-loading :deep(.el-progress) {
+  width: 280px;
+  max-width: 80%;
+}
+
+.regen-tip {
+  margin-top: 16px;
+  font-size: 13px;
+  color: #909399;
 }
 </style>

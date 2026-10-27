@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173,http://localhost:3000"
 
     # LLM 配置
-    llm_provider: str = "deepseek"  # deepseek / aliyun / openai
+    llm_provider: str = "glm"  # deepseek / aliyun / openai / glm
 
     # DeepSeek
     deepseek_api_key: str = ""
@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4-turbo-preview"
 
+    # 智谱 GLM
+    glm_api_key: str = ""
+    glm_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    glm_model: str = "glm-4-flash"
+
     # LangSmith
     langchain_tracing_v2: bool = False
     langchain_api_key: str = ""
@@ -53,6 +58,14 @@ class Settings(BaseSettings):
 
     # Unsplash
     unsplash_access_key: str = ""
+
+    # 数据库
+    database_url: str = "sqlite+aiosqlite:///./data/app.db"
+
+    # 认证 / JWT
+    jwt_secret_key: str = "please-change-this-to-a-long-random-secret-key"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 10080  # 7 天
 
     # 日志
     log_level: str = "INFO"

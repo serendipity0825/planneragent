@@ -155,3 +155,56 @@ export interface LLMProvider {
   name: string
   model: string
 }
+
+// ===========================================
+// 用户与认证
+// ===========================================
+
+export interface User {
+  id: number
+  username: string
+  email: string
+  created_at: string
+}
+
+export interface RegisterRequest {
+  username: string
+  email: string
+  password: string
+}
+
+export interface LoginRequest {
+  username: string
+  password: string
+}
+
+export interface TokenResponse {
+  message: string
+  access_token: string
+  token_type: string
+  user: User
+}
+
+// ===========================================
+// 历史行程
+// ===========================================
+
+export interface TripHistoryItem {
+  id: number
+  session_id: string
+  title: string
+  city: string
+  start_date: string
+  end_date: string
+  travel_days: number
+  created_at: string
+}
+
+export interface TripHistoryDetail extends TripHistoryItem {
+  transportation: string
+  accommodation: string
+  preferences: string[]
+  free_text_input: string
+  budget: number[]
+  result: TripPlan
+}

@@ -14,6 +14,7 @@ class LLMProvider(str, Enum):
     DEEPSEEK = "deepseek"
     ALIYUN = "aliyun"
     OPENAI = "openai"
+    GLM = "glm"
 
 
 class TripStatus(str, Enum):
@@ -51,6 +52,7 @@ class POI(BaseModel):
     location: Optional[Location] = Field(default=None, description="坐标")
     category: Optional[str] = Field(default=None, description="类别")
     rating: Optional[float] = Field(default=None, description="评分")
+    cost: Optional[float] = Field(default=None, description="人均消费(元)，餐厅POI用")
     tel: Optional[str] = Field(default=None, description="电话")
     ticket_price: Optional[int] = Field(default=0, description="门票价格")
     visit_duration: Optional[int] = Field(default=120, description="建议游览时长(分钟)")
@@ -110,6 +112,9 @@ class DayPlan(BaseModel):
     hotel: Optional[Hotel] = Field(default=None, description="推荐酒店")
     attractions: List[Attraction] = Field(default_factory=list, description="景点列表")
     meals: List[Meal] = Field(default_factory=list, description="餐饮列表")
+    # 天气建议
+    weather_advice: str = Field(default="", description="天气穿衣建议")
+    need_umbrella: bool = Field(default=False, description="是否需要带伞")
 
 
 class Budget(BaseModel):
@@ -209,6 +214,73 @@ class ChatResponse(BaseModel):
 
 
 # ===========================================
+# 用户与认证模型
+# ===========================================
+
+class UserCreate(BaseModel):
+    """注册请求"""
+    username: str = Field(..., min_length=3, max_length=50, description="用户名")
+    email: str = Field(..., description="邮箱")
+    password: str = Field(..., min_length=6, max_length=128, description="密码")
+
+
+class UserLogin(BaseModel):
+    """登录请求"""
+    username: str = Field(..., description="用户名或邮箱")
+    password: str = Field(..., description="密码")
+
+
+class UserResponse(BaseModel):
+    """用户信息响应"""
+    id: int = Field(..., description="用户ID")
+    username: str = Field(...)
+    email: str = Field(...)
+    created_at: datetime = Field(...)
+
+    model_config = {"from_attributes": True}
+
+
+class Token(BaseModel):
+    """令牌响应"""
+    access_token: str = Field(...)
+    token_type: str = Field(default="bearer")
+
+
+class TripHistoryItem(BaseModel):
+    """历史行程列表项（摘要）"""
+    id: int
+    session_id: str
+    title: str = ""
+    city: str
+    start_date: str = ""
+    end_date: str = ""
+    travel_days: int = 1
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class TripHistoryDetail(BaseModel):
+    """历史行程详情"""
+    id: int
+    session_id: str
+    title: str = ""
+    city: str
+    start_date: str = ""
+    end_date: str = ""
+    travel_days: int = 1
+    transportation: str = ""
+    accommodation: str = ""
+    preferences: List[str] = Field(default_factory=list)
+    free_text_input: str = ""
+    budget: Optional[List[int]] = Field(default=None)
+    result: Dict[str, Any]
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+# ===========================================
 # Agent 状态模型 (LangGraph State)
 # ===========================================
 
@@ -224,11 +296,13 @@ class AgentState(BaseModel):
     accommodation: str = Field(default="经济型酒店", description="住宿偏好")
     preferences: List[str] = Field(default_factory=list, description="旅行偏好")
     free_text_input: str = Field(default="", description="额外要求")
+    budget: List[int] = Field(default_factory=list, description="预算范围")
 
     # Agent 输出
     pois: List[POI] = Field(default_factory=list, description="POI列表")
     weather: List[Weather] = Field(default_factory=list, description="天气信息")
     hotels: List[Hotel] = Field(default_factory=list, description="酒店列表")
+    foods: List[POI] = Field(default_factory=list, description="美食推荐列表")
     itinerary: Optional[TripPlan] = Field(default=None, description="行程计划")
 
     # 执行状态
@@ -240,6 +314,9 @@ class AgentState(BaseModel):
     # Human-in-the-loop
     need_human_review: bool = Field(default=False, description="是否需要人工审核")
     human_feedback: Optional[str] = Field(default=None, description="人工反馈")
+    human_review_action: Optional[str] = Field(default=None, description="人工审核动作")
+    user_rejection_feedback: Optional[str] = Field(default=None, description="用户拒绝时的反馈内容")
+    retry_count: int = Field(default=0, description="重新规划次数")
 
     # 元数据
     llm_provider: str = Field(default="deepseek", description="LLM提供商")

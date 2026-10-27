@@ -83,14 +83,21 @@ class AmapService:
             if isinstance(tel_value, list):
                 tel_value = "; ".join([str(t) for t in tel_value if t]) if tel_value else ""
 
-            # 处理rating字段
+            # 处理 rating 与人均消费 cost 字段（biz_ext.cost 为字符串如 "85"）
             rating_value = None
+            cost_value = None
             try:
                 biz_ext = poi.get("biz_ext", {})
-                if biz_ext and biz_ext.get("rating"):
-                    rating_value = float(biz_ext.get("rating", 0))
+                if biz_ext:
+                    if biz_ext.get("rating"):
+                        rating_value = float(biz_ext.get("rating", 0))
+                    if biz_ext.get("cost"):
+                        cost_value = float(biz_ext.get("cost", 0))
+                        if cost_value <= 0:
+                            cost_value = None
             except (ValueError, TypeError):
                 rating_value = None
+                cost_value = None
 
             poi_obj = POI(
                 id=poi.get("id", ""),
@@ -99,6 +106,7 @@ class AmapService:
                 location=location_obj,
                 category=poi.get("type", ""),
                 rating=rating_value,
+                cost=cost_value,
                 tel=tel_value,
             )
             result.append(poi_obj)
@@ -178,7 +186,7 @@ class AmapService:
         print(f"[Amap] 城市: {city}, 类型: {hotel_type}")
         print(f"{'='*60}")
 
-        pois = await self.search_poi(f"{hotel_type}酒店", city, citylimit=True, page_size=page_size)
+        pois = await self.search_poi(f"{hotel_type}", city, citylimit=True, page_size=page_size)
 
         hotels = []
         for i, poi in enumerate(pois):
